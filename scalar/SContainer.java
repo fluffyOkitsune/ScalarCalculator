@@ -12,7 +12,7 @@ import scalar.scalarcalc.Interpreter;
  * スカラー式の構造の表現単位 <BR>
  * m*(c^e)+a を表現する。
  */
-public class SContainer implements Comparator<SContainer> {
+public class SContainer {
 	public static SContainer make(String formula) {
 		return Interpreter.run(formula, Field.Real, null);
 	}
@@ -80,39 +80,74 @@ public class SContainer implements Comparator<SContainer> {
 
 	// ------------------------------------------------------------
 	// 展開
+
 	public SContainer extend(Field field) {
+		if (a == null)
+			return subExtend(field);
+
+		Vector<SContainer> added = new Vector<>();
+		spritA(added);
+		for (int i = 0; i < added.size(); i++)
+			added.setElementAt(added.get(i).extend(field), i);
+
+		return combineA(added, field);
+	}
+
+	private SContainer subExtend(Field field) {
 		if (m == null)
 			return this;
 
 		Stack<SContainer> mul = new Stack<>();
 		spritM(mul);
-		System.out.println("#mul" + mul.toString());
 
-		Vector<SContainer> addedANS = new Vector<>();
-		Vector<SContainer> addedSC = new Vector<>();
+		// 展開できるか確認
+		boolean unableToExtend = true;
+		for (SContainer sc : mul)
+			if (sc.a == null)
+				continue;
+			else {
+				unableToExtend = false;
+				break;
+			}
+		if (unableToExtend)
+			return this;
 
-		SContainer ans = mul.pop();
-		ans.spritA(addedANS);
-
-		SContainer sc;
-
-		while (!mul.isEmpty()) {
-			sc = mul.pop();
-			sc.spritA(addedSC);
-
-			System.out.println("#sc" + addedSC.toString());
-			System.out.println("#an" + addedANS.toString());
-
-			Vector<SContainer> arrayTemp = new Vector<>();
-			for (int i = 0; i < addedSC.size(); i++)
-				for (int j = 0; j < addedANS.size(); j++)
-					arrayTemp.addElement((addedSC.get(i)).multi((addedANS.get(j)), field));
-
-			addedANS = arrayTemp;
+		if (DEBUG) {
+			debugPrint("EXTEND[" + toString() + "] : BEGIN");
+			debugIndent++;
 		}
 
-		System.out.println("#" + addedANS.toString());
-		return combineA(addedANS, field);
+		SContainer L;
+		Vector<SContainer> addedL = new Vector<>();
+		SContainer R = mul.pop();
+		Vector<SContainer> addedR = new Vector<>();
+
+		R = R.extend(field);
+		R.spritA(addedR);
+
+		while (!mul.isEmpty()) {
+			L = mul.pop().extend(field);
+			L.spritA(addedL);
+
+			Vector<SContainer> arrayAns = new Vector<>();
+
+			debugPrint(addedL.toString());
+			debugPrint(addedR.toString());
+
+			for (int i = 0; i < addedL.size(); i++)
+				for (int j = 0; j < addedR.size(); j++)
+					arrayAns.addElement((addedL.get(i)).multi((addedR.get(j)), field));
+
+			addedR = arrayAns;
+		}
+
+		SContainer ans = combineA(addedR, field);
+		if (DEBUG) {
+			debugPrint("EXTEND : END [" + ans.toString() + "]");
+			debugIndent--;
+		}
+
+		return ans;
 	}
 
 	// addedの列を分割
@@ -124,11 +159,11 @@ public class SContainer implements Comparator<SContainer> {
 				added.addElement(sc);
 			else
 				added.addElement(new SContainer(sc.c, null, sc.m, sc.e).rearrange());
-		added.sort(ONE);
+		added.sort(new OrderA());
 	}
 
 	private static SContainer combineA(Vector<SContainer> added, Field f) {
-		added.sort(ONE);
+		added.sort(new OrderA());
 		SContainer ans = SContainer.ZERO;
 		for (int i = 0; i < added.size(); i++) {
 			SContainer sc = added.get(added.size() - 1 - i);
@@ -146,12 +181,12 @@ public class SContainer implements Comparator<SContainer> {
 				multipled.addElement(sc);
 			else
 				multipled.addElement(new SContainer(sc.c, sc.a, null, sc.e).rearrange());
-		multipled.sort(ONE);
+		multipled.sort(new OrderM());
 	}
 
 	private static SContainer combineM(Vector<SContainer> multipled, Field f) {
-		multipled.sort(ONE);
-		SContainer ans = SContainer.ZERO;
+		multipled.sort(new OrderM());
+		SContainer ans = SContainer.ONE;
 		for (int i = 0; i < multipled.size(); i++) {
 			SContainer sc = multipled.get(multipled.size() - 1 - i);
 			ans = sc.multi(ans, f);
@@ -180,7 +215,7 @@ public class SContainer implements Comparator<SContainer> {
 			return rearrange();
 	}
 
-	// Factorのみのコンテナを正規化
+	// Containerのみのコンテナを正規化
 	SContainer rearrange() {
 		// 定数値コンテナ
 		if (v != null)
@@ -276,7 +311,7 @@ public class SContainer implements Comparator<SContainer> {
 
 		// 列をソート
 		SContainer sc = SContainer.ZERO;
-		Collections.sort(added, sc);
+		Collections.sort(added, new OrderA());
 		if (DEBUG) {
 			debugPrint("@ A_array:" + added.toString());
 			debugIndent++;
@@ -310,7 +345,7 @@ public class SContainer implements Comparator<SContainer> {
 
 		// 列をソート
 		SContainer sc = SContainer.ONE;
-		Collections.sort(multipled, sc);
+		Collections.sort(multipled, new OrderM());
 		if (DEBUG) {
 			debugPrint("@ M_array:" + multipled.toString());
 			debugIndent++;
@@ -330,43 +365,55 @@ public class SContainer implements Comparator<SContainer> {
 
 	// 足し算
 	public SContainer add(SContainer c, Field field) {
-		SContainer A = this.rearrange(field, null);
-		if (c == null || c.equals(SContainer.ZERO)) {
-			// A+0 = A
+		SContainer A = rearrange(field, null);
+
+		// A+0 = A
+		if (c == null) {
 			if (DEBUG)
 				debugPrint("ADD:[" + A.toString() + "] + 0");
 			return A;
 		}
+
 		SContainer B = c.rearrange(field, null);
+
+		// 0+B = B
 		if (A.equals(SContainer.ZERO)) {
-			// 0+B = B
 			if (DEBUG)
 				debugPrint("ADD:N/A + [" + B.toString() + "]");
 			return B;
 		}
+
+		// A+0 = A
 		if (B.equals(SContainer.ZERO)) {
-			// A+0 = A
 			if (DEBUG)
 				debugPrint("ADD:[" + A.toString() + "] + 0");
 			return A;
 		}
+
+		// valueコンテナ
 		if (A.v != null && B.v != null) {
-			// 2+3 = 5 or S+T
 			if (DEBUG)
 				debugPrint("ADD:[VAL:" + A.toString() + "] + [" + B.toString() + "]");
 			return (A.v).add(B.v, field);
 		}
+
 		if (DEBUG)
 			debugPrint("ADD:[" + A.toString() + "] + [" + B.toString() + "]");
 		if (A.a != null) {
-			Vector<SContainer> array = new Vector<>();
-			spritA(array);
-			SContainer last = array.remove(array.size() - 1);
-			last = last.add(B, field);
-			array.addElement(last);
-			return combineA(array, field);
+			return attachLastA(B, field);
 		}
+
 		return new SContainer(A, B, null, null);
+
+	}
+
+	private SContainer attachLastA(SContainer sc, Field field) {
+		Vector<SContainer> array = new Vector<>();
+		spritA(array);
+		SContainer last = array.remove(array.size() - 1);
+		last = last.add(sc, field);
+		array.addElement(last);
+		return combineA(array, field);
 	}
 
 	// 引き算
@@ -379,22 +426,33 @@ public class SContainer implements Comparator<SContainer> {
 
 	// 掛け算
 	public SContainer multi(SContainer c, Field field) {
-		SContainer A = this.rearrange();
-		if (c == null || c.equals(SContainer.ONE)) {
-			// A*1 = A
+		SContainer A = rearrange();
+
+		// 0*B = 0
+		if (A.equals(SContainer.ZERO)) {
+			if (DEBUG)
+				debugPrint("MULTI:0 * [VAL:" + c.toString() + "] = 0");
+			return SContainer.ZERO;
+		}
+
+		// A*1 = A
+		if (c == null) {
 			if (DEBUG)
 				debugPrint("MULTI:[" + A.toString() + "] * 1");
 			return A;
 		}
+
 		SContainer B = c.rearrange();
-		if (A.equals(SContainer.ZERO) || B.equals(SContainer.ZERO)) {
-			// A*0 = 0*B = 0
+
+		// A*0 = 0
+		if (B.equals(SContainer.ZERO)) {
 			if (DEBUG)
-				debugPrint("MULTI:[VAL:" + A.toString() + "] * [VAL:" + B.toString() + "] = 0");
+				debugPrint("MULTI:[VAL:" + A.toString() + "] * 0 = 0");
 			return SContainer.ZERO;
 		}
+
+		// 1*B = B
 		if (A.equals(SContainer.ONE)) {
-			// 1*B = B
 			if (DEBUG)
 				debugPrint("MULTI:1 * [" + B.toString() + "]");
 			return B;
@@ -412,36 +470,50 @@ public class SContainer implements Comparator<SContainer> {
 					debugPrint("MULTI:[VAL:" + A.toString() + "] * [" + B.toString() + "]");
 				return (A.v).multi(B, field);
 			}
-		} else {
-			// コンテナ * コンテナ
-			if (DEBUG)
-				debugPrint("MULTI:[" + A.toString() + "] * [" + B.toString() + "]");
-			if (A.a == null && B.a == null) {
-				if (A.m == null) {
-					if ((A.c).equals(B.c)) {
-						// 指数法則
-						if ((A.e) != null)
-							// A^2 * [A^3 * m] = A^(2+3) * m
-							return new SContainer(A, null, B.m, A.e.add(B.e, field));
-						else
-							// A * [A^3 * m] = A^(1+3) * m
-							return new SContainer(A, null, B.m, SContainer.ONE.add(B.e, field));
-					} else
-						// [A^2] * [B^2*3+5]
-						return new SContainer(A.c, null, B, A.e);
-				} else {
-					// [A^2*3] * [B^5*7]
-					Vector<SContainer> arrayA = new Vector<>();
-					Vector<SContainer> arrayB = new Vector<>();
-					A.spritM(arrayA);
-					B.spritM(arrayB);
-					arrayA.addAll(arrayB);
-					return combineM(arrayA, field);
-				}
-			}
-			// [A^2*3+4] * [B^2*3+5]
-			return new SContainer(A, null, B, null);
 		}
+
+		// コンテナ * コンテナ
+		if (DEBUG)
+			debugPrint("MULTI:[" + A.toString() + "] * [" + B.toString() + "]");
+		if (A.a == null && B.a == null) {
+			if (A.m == null) {
+				if ((A.c).equals(B.c)) {
+					// 指数法則
+					if ((A.e) != null)
+						// A^2 * [A^3 * m] = A^(2+3) * m
+						return new SContainer(A, null, B.m, A.e.add(B.e, field));
+					else
+						// A * [A^3 * m] = A^(1+3) * m
+						return new SContainer(A, null, B.m, SContainer.ONE.add(B.e, field));
+				} else
+					// [A^2] * [B^2*3+5]
+					return new SContainer(A.c, null, B, A.e);
+			} else {
+				// [A^2*3] * [B^5*7]
+				Vector<SContainer> arrayA = new Vector<>();
+				Vector<SContainer> arrayB = new Vector<>();
+				A.spritM(arrayA);
+				B.spritM(arrayB);
+				arrayA.addAll(arrayB);
+				return combineM(arrayA, field);
+			}
+		}
+
+		// [A^2*3+4] * [B^2*3+5]
+		if (A.m != null) {
+			return attachLastM(B, field);
+		}
+		return new SContainer(A, null, B, null);
+
+	}
+
+	private SContainer attachLastM(SContainer sc, Field field) {
+		Vector<SContainer> array = new Vector<>();
+		spritM(array);
+		SContainer last = array.remove(array.size() - 1);
+		last = last.multi(sc, field);
+		array.addElement(last);
+		return combineM(array, field);
 	}
 
 	// 割り算
@@ -590,36 +662,14 @@ public class SContainer implements Comparator<SContainer> {
 		return str;
 	}
 
-	@Override
-	public int compare(SContainer A, SContainer B) {
-		if (DEBUG) {
-			debugPrint("COMPARE: " + A.toString() + ", " + B.toString());
-			debugPrint("  A:" + A.showStructure());
-			debugPrint("  B:" + B.showStructure());
-		}
-		int result;
-		if (A.v != null && A.v.i != null)
-			if (B.v != null && B.v.i != null)
-				// 1,2
-				result = Integer.compare(A.v.i, B.v.i);
-			else
-				// 1,B
-				result = -1;
-		else if (B.v != null && B.v.i != null)
-			// A,1
-			result = 1;
-		else
-			result = A.showStructure().compareTo(B.showStructure());
+	public static Vector<SContainer> sortA(Vector<SContainer> v) {
+		v.sort(new OrderA());
+		return v;
+	}
 
-		if (DEBUG) {
-			if (result < 0)
-				debugPrint("  " + A.toString() + " < " + B.toString());
-			else if (result > 0)
-				debugPrint("  " + A.toString() + " > " + B.toString());
-			else
-				debugPrint("  " + A.toString() + " = " + B.toString());
-		}
-		return result;
+	public static Vector<SContainer> sortM(Vector<SContainer> v) {
+		v.sort(new OrderM());
+		return v;
 	}
 
 	private String showStructure() {
@@ -764,5 +814,93 @@ public class SContainer implements Comparator<SContainer> {
 	private static void debugPrint(String str) {
 		System.out.println(debugIndent() + str);
 	}
+}
 
+// 項の並び替え
+class OrderA implements Comparator<SContainer> {
+	@Override
+	public int compare(SContainer A, SContainer B) {
+		if (A == null && B == null)
+			return 0;
+		if (A != null && B == null)
+			return -1;
+		if (A == null && B != null)
+			return 1;
+		// e,m,aの順に優先/同じ底のべきは降べきの順。異なる底は辞書順
+		// A^B > A^3 > 2*A^2 > A^2 > B^5 > 3 > 2
+		if (A.v != null) {
+			if (B.v != null)
+				// A:VAL ? B:VAL
+				return new OrderVA().compare(A.v, B.v);
+			else
+				// A:VAL ? B:SC
+				return compare(new SContainer(A, SContainer.ZERO, SContainer.ONE, SContainer.ONE), B);
+		} else {
+			if (B.v != null)
+				// A:SC ? B:VAL
+				return compare(A, new SContainer(B, SContainer.ZERO, SContainer.ONE, SContainer.ONE));
+			else {
+				// A:SC ? B:SC
+				SContainer coefA = null;
+				SContainer coefB = null;
+				if (A.c.v != null && A.c.v.i != null) {
+					coefA = A.c;
+					A = A.m;
+				}
+				if (B.c.v != null && B.c.v.i != null) {
+					coefB = B.c;
+					B = B.m;
+				}
+
+				int ret = compare(A.c, B.c);
+				if (ret == 0)
+					ret = compare(A.e, B.e);
+				if (ret == 0)
+					ret = compare(A.m, B.m);
+				if (ret == 0)
+					ret = compare(A.a, B.a);
+				if (ret == 0)
+					ret = compare(coefA, coefB);
+				return ret;
+
+			}
+		}
+	}
+}
+
+// 因数の並び替え
+class OrderM implements Comparator<SContainer> {
+	@Override
+	public int compare(SContainer A, SContainer B) {
+		// 係数は数字が前
+		if (A == null && B == null)
+			return 0;
+		if (A != null && B == null)
+			return 1;
+		if (A == null && B != null)
+			return -1;
+		// e,aの順に優先/同じ底のべきは降べきの順。異なる底は辞書順
+		// 2 * A^3 * B * (B + A) * (B + C) * C
+		if (A.v != null) {
+			if (B.v != null)
+				// A:VAL ? B:VAL
+				return new OrderVM().compare(A.v, B.v);
+			else
+				// A:VAL ? B:SC
+				return compare(new SContainer(A, SContainer.ZERO, SContainer.ONE, SContainer.ONE), B);
+		} else {
+			if (B.v != null)
+				// A:SC ? B:VAL
+				return compare(A, new SContainer(B, SContainer.ZERO, SContainer.ONE, SContainer.ONE));
+			else {
+				// A:SC ? B:SC
+				int ret = compare(A.c, B.c);
+				if (ret == 0)
+					ret = compare(A.e, B.e);
+				if (ret == 0)
+					ret = compare(A.a, B.a);
+				return ret;
+			}
+		}
+	}
 }

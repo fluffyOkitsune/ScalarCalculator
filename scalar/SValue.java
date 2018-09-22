@@ -1,5 +1,7 @@
 package scalar;
 
+import java.util.Comparator;
+
 public class SValue {
 	public static final SValue ZERO = new SValue(0);
 	public static final SValue ONE = new SValue(1);
@@ -233,5 +235,49 @@ public class SValue {
 			return s;
 		else
 			return i.toString();
+	}
+}
+
+class OrderVA implements Comparator<SValue> {
+	// 項を A+B+2 の順に並び替え
+	@Override
+	public int compare(SValue A, SValue B) {
+		if (A.i != null) {
+			if (B.i != null)
+				// A:NUM ? B:NUM
+				return -Integer.compare(A.i, B.i);
+			else
+				// A:NUM : B:VAL -> B,A
+				return 1;
+		} else {
+			if (B.i != null)
+				// A:VAL : B:NUM -> A,B
+				return -1;
+			else
+				// A:VAL : B:VAL
+				return (A.s).compareTo(B.s);
+		}
+	}
+}
+
+class OrderVM implements Comparator<SValue> {
+	// 因数を 2*A*B の順に並び替え
+	@Override
+	public int compare(SValue A, SValue B) {
+		if (A.i != null) {
+			if (B.i != null)
+				// A:NUM ? B:NUM
+				return Integer.compare(A.i, B.i);
+			else
+				// A:NUM > B:VAL
+				return 1;
+		} else {
+			if (B.i != null)
+				// A:VAL < B:NUM
+				return -1;
+			else
+				// A:VAL ? B:VAL
+				return (A.s).compareTo(B.s);
+		}
 	}
 }

@@ -2,8 +2,8 @@ package scalar.scalarcalc;
 
 import java.util.HashMap;
 
-import scalar.Field;
 import scalar.SContainer;
+import scalar.field.Field;
 
 /**
  * 数式を打ち込んだら計算してくれるエンジン
@@ -20,13 +20,9 @@ public class Interpreter {
 	public final static byte OPR = 3;
 	public final static byte RES = 4;
 
-	// テスト
-	public static void main(String args[]) {
-		Parser.main(args);
-	}
-
-	public static SContainer run(String text, Field field, HashMap<String, SContainer> var) {
-		Parser P = new Parser(text, field);
+	public static <E extends Comparable<E>> SContainer<E> run(String text, Field<E> field,
+			HashMap<String, SContainer<E>> var) {
+		Parser<E> P = new Parser<E>(text, field);
 		P.advance();
 		P.plains(var);
 		return P.result;

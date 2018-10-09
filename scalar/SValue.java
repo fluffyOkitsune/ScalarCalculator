@@ -1,201 +1,274 @@
 package scalar;
 
 import java.util.Comparator;
+import java.util.Vector;
 
-public class SValue {
-	public static final SValue ZERO = new SValue(0);
-	public static final SValue ONE = new SValue(1);
+import scalar.field.Field;
+import scalar.field.PowerIsUnableException;
+
+/**
+ * @param F
+ *            Field
+ * @param E
+ *            Type of Element
+ */
+class SValue<E extends Comparable<E>> {
 	final String s;
-	final Integer i;
+	final E i;
+	final Field<E> f;
 
-	public SValue(String varName) {
-		for (int k = 0; k < varName.length(); k++) {
-			char c = varName.charAt(k);
-			if ('0' <= c && c <= '9' || c == '+' || c == '-')
-				;
-			else {
-				s = varName;
-				i = null;
-				return;
-			}
-		}
-		s = null;
-		i = Integer.parseInt(varName);
+	SValue(String varName, Field<E> field) {
+		s = varName;
+		i = null;
+		f = field;
 	}
 
-	public SValue(int value) {
+	SValue(E value, Field<E> field) {
 		s = null;
 		i = value;
+		f = field;
 	}
 
-	public SContainer add(SValue v, Field f) {
-		SValue A = this;
-		SValue B = v;
-		if (B == null)
-			return new SContainer(A);
-		else if (B.equals(SValue.ZERO))
-			return new SContainer(A);
-		else if (A.i != null)
-			if (B.i != null)
+	SValue<E> zero() {
+		return new SValue<E>(f.zero(), f);
+	}
+
+	SValue<E> one() {
+		return new SValue<E>(f.one(), f);
+	}
+
+	boolean isNumber() {
+		return i != null;
+	}
+
+	boolean isVarName() {
+		return s != null;
+	}
+
+	SContainer<E> add(SValue<E> val) {
+		if (val == null)
+			return new SContainer<E>(this);
+		if (val.equals(zero()))
+			return new SContainer<E>(this);
+
+		if (isNumber())
+			if (val.isNumber())
 				// 1 + 2
-				if (f == Field.Galois)
-					return new SContainer((A.i + B.i) % f.getOrder());
-				else
-					return new SContainer(A.i + B.i);
-			else if (B.s != null)
+				return new SContainer<E>(new SValue<E>(f.add(i, val.i), f));
+			else if (val.isVarName())
 				// 1 + A = A+1
-				return new SContainer(new SContainer(B), new SContainer(A), null, null);
+				return new SContainer<E>(new SContainer<E>(val), new SContainer<E>(this), null, null);
 			else
 				throw new InternalError();
-		else if (A.s != null)
-			if (B.i != null)
+		else if (isVarName())
+			if (val.isNumber())
 				// A + 1
-				return new SContainer(new SContainer(A), new SContainer(B), null, null);
-			else if (B.s != null) {
+				return new SContainer<E>(new SContainer<E>(this), new SContainer<E>(val), null, null);
+			else if (val.isVarName()) {
+				if (s.equals(val.s))
+					// A + A = 2*A
+					return new SContainer<E>(new SContainer<E>(f.add(f.one(), f.one()), f), null,
+							new SContainer<E>(this), null);
 				// A + B
-				int l = (A.s.length() < B.s.length()) ? A.s.length() : B.s.length();
-				for (int i = 0; i < l; i++)
-					if (A.s.charAt(i) < B.s.charAt(i))
-						return new SContainer(new SContainer(A), new SContainer(B), null, null);
-					else if (B.s.charAt(i) < A.s.charAt(i))
-						return new SContainer(new SContainer(B), new SContainer(A), null, null);
-					else
-						continue;
-				// A + A = 2*A
-				return new SContainer(new SContainer(2), null, new SContainer(A), null);
+				if (s.compareTo(val.s) > 0)
+					return new SContainer<E>(new SContainer<E>(val), new SContainer<E>(this), null, null);
+				else
+					return new SContainer<E>(new SContainer<E>(this), new SContainer<E>(val), null, null);
+
 			} else
 				throw new InternalError();
 		else
 			throw new InternalError();
 	}
 
-	public SContainer add(SContainer c, Field field) {
-		if (c == null)
-			return new SContainer(this);
-		if (c.equals(SContainer.ZERO))
-			return new SContainer(this);
-		SValue A = this;
-		SContainer B = c.rearrange();
-		if (B.v != null)
-			return A.add(c.v, field);
-		if (B.c.v != null && new SContainer(A).equals(B.c.m))
-			// A + [2*A]
-			return SValue.ONE.add(B.c.v, field).multi(new SContainer(A), field);
-		return new SContainer(new SContainer(A), B, null, null);
+	SContainer<E> add(SContainer<E> cont, boolean needsToSort) {
+		if (cont == null)
+			return new SContainer<E>(this);
+
+		// A:VAL * B:VAL
+		if (cont.isValue()) {
+			if ((cont.v).equals(zero()))
+				return new SContainer<E>(this);
+			else
+				return this.add(cont.v);
+		}
+		// A:VAL * B:CONT
+		else if (cont.isCoefficient()) {
+			if (new SContainer<E>(this).equals(cont.m))
+				// A[S] + B[2*S + T] = [(1+2)*S + T]
+				return new SContainer<E>(one().add(cont.c, true), cont.a, cont.m, null);
+		} else {
+			if (new SContainer<E>(this).equals(cont.c) && cont.e == null && cont.m == null)
+				// A:[S] + B:[S + T] = [[1+1]*S + T]
+				return new SContainer<E>(one().add(one()), cont.a, cont.c, null);
+		}
+
+		if (cont.a == null)
+			if (cont.e == null && cont.m == null)
+				return new SContainer<E>(new SContainer<E>(this), cont.c, null, null);
+
+		SContainer<E> res = new SContainer<E>(new SContainer<E>(this), cont, null, null);
+		if (needsToSort) {
+			Vector<SContainer<E>> array = new Vector<>();
+			return sortA(array, res);
+		} else
+			return res;
 	}
 
-	public SContainer multi(SValue v, Field f) {
-		SValue A = this;
-		SValue B = v;
-		if (v == null)
-			return new SContainer(A);
-		else if (v.equals(SValue.ONE))
-			return new SContainer(A);
-		else if (A.i != null)
-			if (B.i != null)
-				// 2 * 3 = 6
-				if (f == Field.Galois)
-					return new SContainer((A.i * B.i) % f.getOrder());
+	private SContainer<E> sortA(Vector<SContainer<E>> added, SContainer<E> res) {
+		added.removeAllElements();
+		for (SContainer<E> sc = res; sc != null; sc = sc.a)
+			if (sc.isValue())
+				added.addElement(sc);
+			else {
+				if (sc.m == null && sc.e == null)
+					added.addElement(sc.c);
 				else
-					return new SContainer(A.i * B.i);
-			else if (B.s != null)
+					added.addElement(new SContainer<E>(sc.c, null, sc.m, sc.e));
+			}
+		added.sort(new OrderA<E>());
+		SContainer<E> ans = added.get(0).zero();
+		for (int i = 0; i < added.size(); i++) {
+			SContainer<E> sc = added.get(added.size() - 1 - i);
+			ans = sc.add(ans, false);
+		}
+		return ans;
+	}
+
+	SContainer<E> multi(SValue<E> val) {
+		if (val == null)
+			return new SContainer<E>(this);
+		if (val.equals(one()))
+			return new SContainer<E>(this);
+
+		if (isNumber())
+			if (val.isNumber())
+				// 2 * 3 = 6
+				return new SContainer<E>(new SValue<E>(f.multiply(i, val.i), f));
+			else if (val.isVarName())
 				// 2 * A
-				return new SContainer(new SContainer(A), null, new SContainer(B), null);
+				return new SContainer<E>(new SContainer<E>(this), null, new SContainer<E>(val), null);
 			else
 				throw new InternalError();
-		else if (A.s != null)
-			if (B.i != null)
+		else if (isVarName())
+			if (val.i != null)
 				// A * 2 = 2*A
-				return new SContainer(new SContainer(B), null, new SContainer(A), null);
-			else if (B.s != null)
-				if (A.s.equals(B.s))
+				return new SContainer<E>(new SContainer<E>(val), null, new SContainer<E>(this), null);
+			else if (val.s != null)
+				if (s.equals(val.s))
 					// A * A = A^2
-					return new SContainer(new SContainer(A), null, null, new SContainer(2));
+					return new SContainer<E>(new SContainer<E>(this), null, null, one().add(one()));
 				else
-					// A * B
-					return new SContainer(new SContainer(A), null, new SContainer(B), null);
+				// A * B
+				if (s.compareTo(val.s) > 0)
+					return new SContainer<E>(new SContainer<E>(val), null, new SContainer<E>(this), null);
+				else
+					return new SContainer<E>(new SContainer<E>(this), null, new SContainer<E>(val), null);
 			else
 				throw new InternalError();
 		else
 			throw new InternalError();
 	}
 
-	public SContainer multi(SContainer c, Field f) {
-		SValue A = this;
-		if (c == null)
-			return new SContainer(A);
-		SContainer B = c.rearrange();
-		if (B.equals(SContainer.ONE))
-			return new SContainer(A);
-		if (B.v != null)
-			return A.multi(B.v, f);
-		if (B.a == null) {
-			if (A.i != null) {
-				if (B.c.v != null && B.e == null)
-					// 2*[3*A] = 6*A
-					return new SContainer(A.multi(B.c.v, f), null, B.m, null);
-			} else if (A.equals(B.c.v)) {
-				if (B.e == null)
-					// S*S = S^2
-					return new SContainer(new SContainer(A), null, B.m, new SContainer(new SValue(2)));
-				else
-					// S*(S^2) = S^3
-					return new SContainer(new SContainer(A), null, B.m, SValue.ONE.add(B.e, f));
+	SContainer<E> multi(SContainer<E> cont, boolean needsToSort) {
+		if (cont == null)
+			return new SContainer<E>(this);
+
+		// A:VAL * B:VAL
+		if (cont.isValue()) {
+			if ((cont.v).equals(one()))
+				return new SContainer<E>(this);
+			else
+				return multi(cont.v);
+		}
+
+		// A:VAL * B:CONT
+		if (cont.a == null) {
+			if (this.isNumber()) {
+				if (cont.isCoefficient())
+					// A:[2] * B:[3*A] = [6*A]
+					return new SContainer<E>(multi(cont.c, true), null, cont.m, null);
+			} else {
+				if (new SContainer<E>(this).equals(cont.c)) {
+					if (cont.e == null)
+						// A:[S] * B:[S] = [S^2]
+						return new SContainer<E>(new SContainer<E>(this), null, cont.m, one().add(one()));
+					else
+						// A:[S] * B:[S^2] = [S^3]
+						return new SContainer<E>(new SContainer<E>(this), null, cont.m, one().add(cont.e, true));
+				}
 			}
 		}
-		return new SContainer(new SContainer(A), null, B, null);
+		if (cont.m == null)
+			if (cont.e == null)
+				return new SContainer<E>(new SContainer<E>(this), null, cont.c, null);
+			else
+				return new SContainer<E>(new SContainer<E>(this), null, cont, null);
 
+		SContainer<E> res = new SContainer<E>(new SContainer<E>(this), null, cont, null);
+		if (needsToSort) {
+			Vector<SContainer<E>> array = new Vector<>();
+			return sortM(array, res);
+		} else
+			return res;
 	}
 
-	public SContainer pow(SValue v, Field f) {
-		SValue A = this;
-		SValue B = v;
-		if (v == null)
-			return new SContainer(this);
-		else if (v.equals(SValue.ONE))
-			return new SContainer(this);
-		else if (v.equals(SValue.ZERO))
-			return SContainer.ONE;
-		else if (A.i != null)
-			if (B.i != null)
-				// 2 ^ 3 = 8
-				if (f == Field.Galois)
-					return new SContainer(((int) Math.pow(A.i, B.i)) % f.getOrder());
+	private SContainer<E> sortM(Vector<SContainer<E>> multipled, SContainer<E> res) {
+		multipled.removeAllElements();
+		for (SContainer<E> sc = res; sc != null; sc = sc.m)
+			if (sc.isValue())
+				multipled.addElement(sc);
+			else {
+				if (sc.a == null && sc.e == null)
+					multipled.addElement(sc.c);
 				else
-					return new SContainer((int) Math.pow(A.i, B.i));
-			else if (B.s != null)
+					multipled.addElement(new SContainer<E>(sc.c, sc.a, null, sc.e));
+			}
+		multipled.sort(new OrderM<E>());
+		SContainer<E> ans = multipled.get(0).one();
+		for (int i = 0; i < multipled.size(); i++) {
+			SContainer<E> sc = multipled.get(multipled.size() - 1 - i);
+			ans = sc.multi(ans, false);
+		}
+		return ans;
+	}
+
+	public SContainer<E> pow(SValue<E> val) throws PowerIsUnableException {
+		if (val == null)
+			return new SContainer<E>(this);
+		else if (val.equals(one()))
+			return new SContainer<E>(this);
+		else if (val.equals(zero()))
+			return new SContainer<E>(one());
+
+		else if (isNumber())
+			if (val.isNumber())
+				// 2 ^ 3 = 8
+				return new SContainer<E>(f.pow(i, val.i), f);
+			else if (val.isVarName())
 				// 2 ^ A
-				return new SContainer(new SContainer(A), null, null, new SContainer(B));
+				return new SContainer<E>(new SContainer<E>(this), null, null, new SContainer<E>(val));
 			else
 				throw new InternalError();
-		else if (A.s != null)
-			if (B.i != null)
-				// A ^ 2
-				return new SContainer(new SContainer(A), null, null, new SContainer(B));
-			else if (B.s != null)
-				// A ^ B
-				return new SContainer(new SContainer(A), null, null, new SContainer(B));
-			else
-				throw new InternalError();
+		else if (isVarName())
+			// A ^ 2
+			return new SContainer<E>(new SContainer<E>(this), null, null, new SContainer<E>(val));
 		else
 			throw new InternalError();
 	}
 
-	public SContainer pow(SContainer c, Field f) {
-		SValue A = this;
-		if (c == null)
-			return new SContainer(this);
-		SContainer B = c.rearrange();
-		if (B.equals(SContainer.ZERO))
-			return SContainer.ONE;
-		if (B.equals(SContainer.ONE))
-			return new SContainer(this);
-		if (B.v != null)
-			return A.pow(B.v, f);
-		if (i != null && c.v.i != null)
-			// TODO : 有理数べき乗
-			return new SContainer(new SValue((int) Math.pow(i, c.v.i)));
-		return new SContainer(new SContainer(A), null, null, c);
+	public SContainer<E> pow(SContainer<E> cont) throws PowerIsUnableException {
+		if (cont == null)
+			return new SContainer<E>(this);
+		if (cont.equals(new SContainer<E>(zero())))
+			return new SContainer<E>(one());
+		if (cont.equals(new SContainer<E>(one())))
+			return new SContainer<E>(this);
+
+		if (cont.isValue())
+			return pow(cont.v);
+		else
+			return new SContainer<E>(new SContainer<E>(this), null, null, cont);
 	}
 
 	@Override
@@ -215,7 +288,10 @@ public class SValue {
 			return false;
 		if (!(obj instanceof SValue))
 			return false;
-		SValue other = (SValue) obj;
+
+		@SuppressWarnings("unchecked")
+		SValue<E> other = (SValue<E>) obj;
+
 		if (i == null) {
 			if (other.i != null)
 				return false;
@@ -238,14 +314,14 @@ public class SValue {
 	}
 }
 
-class OrderVA implements Comparator<SValue> {
+class OrderVA<E extends Comparable<E>> implements Comparator<SValue<E>> {
 	// 項を A+B+2 の順に並び替え
 	@Override
-	public int compare(SValue A, SValue B) {
-		if (A.i != null) {
+	public int compare(SValue<E> A, SValue<E> B) {
+		if (A.isNumber()) {
 			if (B.i != null)
 				// A:NUM ? B:NUM
-				return -Integer.compare(A.i, B.i);
+				return (A.i).compareTo(B.i);
 			else
 				// A:NUM : B:VAL -> B,A
 				return 1;
@@ -260,21 +336,21 @@ class OrderVA implements Comparator<SValue> {
 	}
 }
 
-class OrderVM implements Comparator<SValue> {
+class OrderVM<E extends Comparable<E>> implements Comparator<SValue<E>> {
 	// 因数を 2*A*B の順に並び替え
 	@Override
-	public int compare(SValue A, SValue B) {
+	public int compare(SValue<E> A, SValue<E> B) {
 		if (A.i != null) {
 			if (B.i != null)
 				// A:NUM ? B:NUM
-				return Integer.compare(A.i, B.i);
+				return (A.i).compareTo(B.i);
 			else
-				// A:NUM > B:VAL
-				return 1;
+				// A:NUM < B:VAL
+				return -1;
 		} else {
 			if (B.i != null)
-				// A:VAL < B:NUM
-				return -1;
+				// A:VAL > B:NUM
+				return 1;
 			else
 				// A:VAL ? B:VAL
 				return (A.s).compareTo(B.s);

@@ -3,14 +3,15 @@ package scalar.scalarcalc;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.event.*;
-import java.util.ArrayList;
+import java.math.BigInteger;
 import java.util.HashMap;
+import java.util.Set;
 
 import javax.swing.*;
 import javax.swing.event.*;
 
-import scalar.Field;
 import scalar.SContainer;
+import scalar.field.*;
 
 /**
  * 数式かるきゅれ～た
@@ -30,7 +31,7 @@ public class ScalarCalc extends JFrame implements ActionListener, ChangeListener
 	private JRadioButton type1;
 	private JRadioButton type2;
 
-	HashMap<String, SContainer> var;
+	HashMap<String, String> var;
 
 	public static void main(String args[]) {
 		new ScalarCalc() {
@@ -47,19 +48,19 @@ public class ScalarCalc extends JFrame implements ActionListener, ChangeListener
 	}
 
 	private ScalarCalc() {
-		type0 = new JRadioButton("実数(R)");
-		type0.setMnemonic(KeyEvent.VK_R);
+		type0 = new JRadioButton("実数(Double)");
+		type0.setMnemonic(KeyEvent.VK_D);
 		type0.addActionListener(this);
 		type0.setActionCommand("Real");
 		type0.setSelected(true);
 
-		type1 = new JRadioButton("分数(F)");
-		type1.setMnemonic(KeyEvent.VK_F);
+		type1 = new JRadioButton("有理数(Rational number)");
+		type1.setMnemonic(KeyEvent.VK_R);
 		type1.addActionListener(this);
 		type1.setActionCommand("Frac");
 
-		type2 = new JRadioButton("有限体(I)");
-		type2.setMnemonic(KeyEvent.VK_I);
+		type2 = new JRadioButton("有限体(Galois Field)");
+		type2.setMnemonic(KeyEvent.VK_G);
 		type2.addActionListener(this);
 		type2.setActionCommand("Field");
 
@@ -73,7 +74,7 @@ public class ScalarCalc extends JFrame implements ActionListener, ChangeListener
 			}
 		};
 
-		button = new JButton("計算(C)");
+		button = new JButton("計算(Calculate) ");
 		button.addActionListener(this);
 		button.setActionCommand("Calc");
 		button.setMnemonic(KeyEvent.VK_C);
@@ -92,7 +93,7 @@ public class ScalarCalc extends JFrame implements ActionListener, ChangeListener
 				add(type1);
 				add(type2);
 				add(button);
-				add(new JLabel("位数:"));
+				add(new JLabel("位数 Order :"));
 				add(order);
 			}
 		};
@@ -102,9 +103,9 @@ public class ScalarCalc extends JFrame implements ActionListener, ChangeListener
 			{
 				setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
 				// 数式入力タブ
-				add(new JLabel("数式"));
+				add(new JLabel("数式 Formula"));
 				add(fomula);
-				add(new JLabel("結果"));
+				add(new JLabel("結果 Result"));
 				add(answer);
 			}
 		};
@@ -125,22 +126,34 @@ public class ScalarCalc extends JFrame implements ActionListener, ChangeListener
 	void fomulaCalc() {
 		try {
 			String text = fomula.getText();
-			SContainer sc = null;
-			if (type0.isSelected())
-				sc = Interpreter.run(text, Field.Real, var);
-			else if (type1.isSelected())
-				sc = Interpreter.run(text, Field.Real, var);
-			else if (type2.isSelected()) {
-				Field f = Field.Galois;
-				f.setOrder((int) order.getValue());
-				sc = Interpreter.run(text, f, var);
+			SContainer<? extends Comparable<?>> sc = null;
+
+			if (type0.isSelected()) { // 浮動小数点
+				Field<Double> field = new DoubleField();
+				HashMap<String, SContainer<Double>> varName = loadVarTable(var, field);
+				sc = Interpreter.run(text, field, varName);
+				saveVarTable(varName, field);
+
+			} else if (type1.isSelected()) { // 有理整数環
+				Field<Frac> field = new RationalField();
+				HashMap<String, SContainer<Frac>> varName = loadVarTable(var, field);
+				sc = Interpreter.run(text, field, loadVarTable(var, field));
+				saveVarTable(varName, field);
+
+			} else if (type2.isSelected()) { // ガロア体
+				Field<BigInteger> field = new GaloisField((int) order.getValue());
+				HashMap<String, SContainer<BigInteger>> varName = loadVarTable(var, field);
+				sc = Interpreter.run(text, field, loadVarTable(var, field));
+				saveVarTable(varName, field);
 			}
+
 			if (sc != null)
 				answer.setText(sc.toString());
-		} catch (Syntax_error e) {
+
+		} catch (SyntaxErrorException e) {
 			JOptionPane.showMessageDialog(this, "数式エラー　不適切なトークン" + e + "を検出しました", "エラー", JOptionPane.ERROR_MESSAGE);
 			e.printStackTrace();
-		} catch (Var_not_exist_error e) {
+		} catch (VarNotExistException e) {
 			JOptionPane.showMessageDialog(this, "変数" + e + "は存在しないか、定義されていません", "エラー", JOptionPane.ERROR_MESSAGE);
 			e.printStackTrace();
 		} catch (ClassCastException e) {
@@ -153,6 +166,26 @@ public class ScalarCalc extends JFrame implements ActionListener, ChangeListener
 			JOptionPane.showMessageDialog(this, e, "エラー", JOptionPane.ERROR_MESSAGE);
 			e.printStackTrace();
 		}
+	}
+
+	private <E extends Comparable<E>> HashMap<String, SContainer<E>> loadVarTable(HashMap<String, String> hashMap,
+			Field<E> field) {
+		HashMap<String, SContainer<E>> res = new HashMap<>();
+		Set<String> key = hashMap.keySet();
+
+		for (String k : key)
+			res.put(k, SContainer.make(hashMap.get(k), field));
+		return res;
+	}
+
+	private <E extends Comparable<E>> HashMap<String, String> saveVarTable(HashMap<String, SContainer<E>> hashMap,
+			Field<E> field) {
+		HashMap<String, String> res = new HashMap<>();
+		Set<String> key = hashMap.keySet();
+
+		for (String k : key)
+			res.put(k, hashMap.get(k).toString());
+		return res;
 	}
 
 	@Override

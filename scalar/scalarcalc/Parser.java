@@ -6,39 +6,20 @@ import java.io.InputStreamReader;
 import java.util.HashMap;
 import java.util.Stack;
 
-import scalar.Field;
 import scalar.SContainer;
-import scalar.SValue;
+import scalar.field.Field;
 
 //----------------------------------------------------------------------
 //構文解析機
 //----------------------------------------------------------------------
-public class Parser {
-	private static final boolean DEBUG = true;
+public class Parser<E extends Comparable<E>> {
+	private static final boolean DEBUG = false;
 
-	public static void main(String args[]) {
-		System.out.println("構文解析テスト");
-		while (true) {
-			BufferedReader br = new BufferedReader(new InputStreamReader(System.in), 1);
-			try {
-				new Parser(br.readLine(), Field.Real).run();
-			} catch (End_of_file e) {
-				System.out.println("-------------------------");
-				continue;
-			} catch (End_of_system e) {
-				break;
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-		}
-		System.out.println("おわり");
-	}
-
-	public SContainer result;
-	private Field field;
+	public SContainer<E> result;
+	private Field<E> field;
 	Lexer L;
 
-	Parser(String text, Field f) {
+	Parser(String text, Field<E> f) {
 		field = f;
 		L = new Lexer(text);
 	}
@@ -70,24 +51,24 @@ public class Parser {
 			if (t instanceof Token.ID)
 				;// OK
 			else
-				throw new Syntax_error(tok.getClass().toGenericString());
+				throw new SyntaxErrorException(tok.getClass().toGenericString());
 		else if (tok instanceof Token.NUM)
 			if (t instanceof Token.NUM)
 				;// OK
 			else
-				throw new Syntax_error(tok, t);
+				throw new SyntaxErrorException(tok, t);
 		else if (tok instanceof Token.ONE)
 			if (t instanceof Token.ONE)
 				if (((Token.ONE) tok).one == ((Token.ONE) t).one)
 					;// OK
 				else
-					throw new Syntax_error(tok, t);
+					throw new SyntaxErrorException(tok, t);
 			else
-				throw new Syntax_error(tok, t);
+				throw new SyntaxErrorException(tok, t);
 		else if (tok.getClass().equals(t.getClass()))
 			;// OK
 		else
-			throw new Syntax_error(tok, t);
+			throw new SyntaxErrorException(tok, t);
 	}
 
 	void eat(Token t) {
@@ -97,7 +78,7 @@ public class Parser {
 
 	/* 文法チェック */
 	// 複数の構文
-	void plains(HashMap<String, SContainer> var) {
+	void plains(HashMap<String, SContainer<E>> var) {
 		if (DEBUG)
 			System.out.print("plains:");
 		plain(var);
@@ -116,7 +97,7 @@ public class Parser {
 		eat(new Token.EOF());
 	}
 
-	void plain(HashMap<String, SContainer> var) {
+	void plain(HashMap<String, SContainer<E>> var) {
 		if (DEBUG)
 			System.out.print("plain:");
 		// Plain -> Print
@@ -138,19 +119,19 @@ public class Parser {
 	}
 
 	// 印字
-	void print(HashMap<String, SContainer> var) {
+	void print(HashMap<String, SContainer<E>> var) {
 		if (DEBUG)
 			System.out.print("print:");
 		// Print -> PRINT ( expr )
 		eat(new Token.PRINT());
 		eat(new Token.ONE('('));
-		SContainer sc = expr(var);
+		SContainer<E> sc = expr(var);
 		eat(new Token.ONE(')'));
 		sc.print();
 	}
 
 	// 消去
-	void clear(HashMap<String, SContainer> var) {
+	void clear(HashMap<String, SContainer<E>> var) {
 		if (DEBUG)
 			System.out.print("clear:");
 		// clear -> CLEAR ( id )
@@ -164,7 +145,7 @@ public class Parser {
 	}
 
 	// 代入
-	void sub(HashMap<String, SContainer> var) {
+	void sub(HashMap<String, SContainer<E>> var) {
 		if (DEBUG)
 			System.out.print("sub:");
 		// Sub -> ID = Expr
@@ -177,31 +158,31 @@ public class Parser {
 	}
 
 	// 式
-	SContainer expr(HashMap<String, SContainer> var) {
+	SContainer<E> expr(HashMap<String, SContainer<E>> var) {
 		if (DEBUG)
 			System.out.print("expr:");
 		// Expr -> Term Expr'
-		SContainer A = term(var);
-		SContainer B = expr_tail(A, var);
+		SContainer<E> A = term(var);
+		SContainer<E> B = expr_tail(A, var);
 		return B;
 	}
 
-	SContainer expr_tail(SContainer A, HashMap<String, SContainer> var) {
+	SContainer<E> expr_tail(SContainer<E> A, HashMap<String, SContainer<E>> var) {
 		if (DEBUG)
 			System.out.print("expr':");
 		if (tok instanceof Token.ONE) {
 			if (((Token.ONE) tok).one == '+') {
 				// Expr' -> + Term Expr'
 				eat(new Token.ONE('+'));
-				SContainer sc = term(var);
-				SContainer B = expr_tail(sc, var);
-				return A.add(B, field);
+				SContainer<E> sc = term(var);
+				SContainer<E> B = expr_tail(sc, var);
+				return A.add(B);
 			} else if (((Token.ONE) tok).one == '-') {
 				// Expr' -> - Term Expr'
 				eat(new Token.ONE('-'));
-				SContainer sc = term(var);
-				SContainer B = expr_tail(sc, var);
-				return A.sub(B, field);
+				SContainer<E> sc = term(var);
+				SContainer<E> B = expr_tail(sc, var);
+				return A.sub(B);
 			}
 		}
 		// Expr' -> _
@@ -209,83 +190,93 @@ public class Parser {
 	}
 
 	// 項
-	SContainer term(HashMap<String, SContainer> var) {
+	SContainer<E> term(HashMap<String, SContainer<E>> var) {
 		if (DEBUG)
 			System.out.print("term:");
 		// Term -> Pow Term'
-		SContainer A = pow(var);
-		SContainer B = term_tail(A, var);
+		SContainer<E> A = pow(var);
+		SContainer<E> B = term_tail(A, var);
 		return B;
 	}
 
-	SContainer term_tail(SContainer A, HashMap<String, SContainer> var) {
+	SContainer<E> term_tail(SContainer<E> A, HashMap<String, SContainer<E>> var) {
 		if (DEBUG)
 			System.out.print("term':");
 		if (tok instanceof Token.ONE)
 			if (((Token.ONE) tok).one == '*') {
 				// Term' -> '*' Pow Term'
 				eat(new Token.ONE('*'));
-				SContainer sc = pow(var);
-				SContainer B = term_tail(sc, var);
-				return A.multi(B, field);
+				SContainer<E> sc = pow(var);
+				SContainer<E> B = term_tail(sc, var);
+				return A.multi(B);
+			} else if (((Token.ONE) tok).one == '/') {
+				// Term' -> '*' Pow Term'
+				eat(new Token.ONE('/'));
+				SContainer<E> sc = pow(var);
+				SContainer<E> B = term_tail(sc, var);
+				return A.div(B);
 			}
 		// Term' -> _
 		return A;
 	}
 
 	// 因数
-	SContainer pow(HashMap<String, SContainer> var) {
+	SContainer<E> pow(HashMap<String, SContainer<E>> var) {
 		if (DEBUG)
 			System.out.print("pow:");
-		// Pow -> Fact '^' Fact
-		Token tmp = tok.clone();
-		advance();
-		if (tok instanceof Token.ONE) {
+		// Pow -> Fact Pow'
+		SContainer<E> A = fact(var);
+		SContainer<E> B = pow_tail(A, var);
+		return B;
+	}
+
+	SContainer<E> pow_tail(SContainer<E> A, HashMap<String, SContainer<E>> var) {
+		if (DEBUG)
+			System.out.print("pow':");
+		if (tok instanceof Token.ONE)
 			if (((Token.ONE) tok).one == '^') {
-				revToken(tmp);
-				SContainer A = fact(var);
+				// Pow' -> '^' Pow Fact'
 				eat(new Token.ONE('^'));
-				SContainer B = fact(var);
-				return A.pow(B, field);
+				SContainer<E> sc = fact(var);
+				SContainer<E> B = pow_tail(sc, var);
+				return A.pow(B);
 			}
-		}
-		// Pow -> Fact
-		revToken(tmp);
-		return fact(var);
+		// Term' -> _
+		return A;
 	}
 
 	// 数
-	SContainer fact(HashMap<String, SContainer> var) {
+	SContainer<E> fact(HashMap<String, SContainer<E>> var) {
 		if (DEBUG)
 			System.out.print("fact:");
 		if (tok instanceof Token.EXTEND) {
 			// Fact -> EXTEND '(' expr ')'
 			eat(new Token.EXTEND());
 			eat(new Token.ONE('('));
-			SContainer tmp = expr(var).extend(field);
+			SContainer<E> tmp = expr(var).extend();
 			eat(new Token.ONE(')'));
 			return tmp;
 		} else if (tok instanceof Token.INVERT) {
 			// Fact -> INVERT(expr)
 			eat(new Token.INVERT());
 			eat(new Token.ONE('('));
-			SContainer tmp = expr(var).invert(field);
+			SContainer<E> tmp = expr(var).invert();
 			eat(new Token.ONE(')'));
 			return tmp;
 		} else if (tok instanceof Token.ONE) {
 			if (((Token.ONE) tok).one == '(') {
 				// Fact -> '(' expr ')'
 				eat(new Token.ONE('('));
-				SContainer e = expr(var);
+				SContainer<E> e = expr(var);
 				eat(new Token.ONE(')'));
 				return e;
 			} else if (((Token.ONE) tok).one == '-') {
 				// Fact -> '-' Fact
 				eat(new Token.ONE('-'));
-				SContainer f = fact(var);
-				return new SContainer(-1).multi(f, field);
+				SContainer<E> f = fact(var);
+				return new SContainer<E>("", field).minusOne().multi(f);
 			} else
-				throw new Syntax_error(tok.getClass().toString() + "'" + ((Token.ONE) tok).one + "'");
+				throw new SyntaxErrorException(tok.getClass().toString() + "'" + ((Token.ONE) tok).one + "'");
 		} else if (tok instanceof Token.NUM) {
 			// Fact -> NUM
 			return scalar(var);
@@ -293,28 +284,29 @@ public class Parser {
 			// Fact -> VAR
 			return dequeue(id(), var);
 		} else
-			throw new Syntax_error(tok.getClass().toString());
+			throw new SyntaxErrorException(tok.getClass().toString());
 	}
 
-	SContainer scalar(HashMap<String, SContainer> var) {
+	SContainer<E> scalar(HashMap<String, SContainer<E>> var) {
 		if (DEBUG)
 			System.out.print("scalar:");
-		int n = num();
+		E n = field.makeElement(num());
 		if (tok instanceof Token.ID) {
 			// scalar -> NUM ID
-			SContainer elem = dequeue(id(), var);
-			return new SContainer(n).multi(elem, field);
+			SContainer<E> elem = dequeue(id(), var);
+			return new SContainer<E>(n, field).multi(elem);
 		} else
 			// scalar -> NUM
-			return new SContainer(n);
+			return new SContainer<E>(n, field);
 	}
 
 	// 数字
-	int num() {
+	String num() {
 		if (DEBUG)
 			System.out.print("num:");
 		check(new Token.NUM(0));
-		int tmp = ((Token.NUM) tok).num;
+		// TODO:Long値対応
+		String tmp = Integer.toString(((Token.NUM) tok).num);
 		advance();
 		return tmp;
 	}
@@ -329,23 +321,19 @@ public class Parser {
 		return tmp;
 	}
 
-	void enqueue(String varName, SContainer element, HashMap<String, SContainer> var) {
+	void enqueue(String varName, SContainer<E> element, HashMap<String, SContainer<E>> var) {
 		if (var != null)
 			var.put(varName, element);
 	}
 
-	SContainer dequeue(String varName, HashMap<String, SContainer> var) {
-		if (var != null)
-			if (var.containsKey(varName))
-				return var.get(varName);
-			else
-				return new SContainer(varName);
-		else
-			return new SContainer(varName);
+	SContainer<E> dequeue(String varName, HashMap<String, SContainer<E>> var) {
+		if (var != null && var.containsKey(varName))
+			return var.get(varName);
+		return new SContainer<E>(varName, field);
 	}
 
 	void run() {
-		HashMap<String, SContainer> var = new HashMap<>();
+		HashMap<String, SContainer<E>> var = new HashMap<>();
 		advance();
 		plains(var);
 		if (tok instanceof Token.ONE && ((Token.ONE) tok).one == '$')
@@ -353,12 +341,12 @@ public class Parser {
 		try {
 			System.out.flush();
 			if (result != null)
-				System.out.println("\nanswer = " + result.calc(field).toString());
+				System.out.println("\nanswer = " + result.toString());
 			else
 				result = null;
-		} catch (Syntax_error e) {
+		} catch (SyntaxErrorException e) {
 			e.printStackTrace();
-		} catch (Var_not_exist_error e) {
+		} catch (VarNotExistException e) {
 			e.printStackTrace();
 		}
 	}
@@ -366,23 +354,23 @@ public class Parser {
 
 /* エラー出力 */
 @SuppressWarnings("serial")
-class Syntax_error extends RuntimeException {
-	Syntax_error(Token token, Token check) {
+class SyntaxErrorException extends RuntimeException {
+	SyntaxErrorException(Token token, Token check) {
 		super("\'" + check + "\' is expected. (" + token + ")");
 	}
 
-	Syntax_error(String s) {
+	SyntaxErrorException(String s) {
 		super(s);
 	}
 }
 
 @SuppressWarnings("serial")
-class Var_not_exist_error extends RuntimeException {
-	Var_not_exist_error() {
+class VarNotExistException extends RuntimeException {
+	VarNotExistException() {
 		super();
 	}
 
-	Var_not_exist_error(String s) {
+	VarNotExistException(String s) {
 		super(s);
 	}
 }

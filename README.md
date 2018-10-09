@@ -1,31 +1,69 @@
 # ScalarCalculator
-開発中です。
+それとなくできたきがします。
 
 ## Abstract
-打ち込んだ数式を解釈して計算してくれるプログラム。
+打ち込んだ数式を解釈し、指定した可換環によって計算してくれるプログラム。
 数字だけでなく文字(変数)も利用可能。
 
 ## How to use
-SContainer.make(String s)<BR>
-文字式や数式のインスタンスを生成
+とりあえず計算したい！
+~~~
+import scalar.*;
+import scalar.field.*;
 
-SContainer.print()<BR>
-内容を印字
+public class Calc {
+	public static void main(String[] args) {
+		Field<Frac> field = new RationalField();
+		String formula = "3*A+2*3+A+5";
+		SContainer.make(formula, field).print();
+	}
+}
+~~~
 
-Example<BR>
-% public static void main(String[] args){<BR>
-% 	SContainer.make("1+1").print();<BR>
-%}<BR>
+展開
+~~~
+import scalar.*;
+import scalar.field.*;
+
+public class Calc {
+	public static void main(String[] args) {
+		Field<Frac> field = new RationalField();
+		String formula = "(A+B)*(C+D)";
+		SContainer.make(formula, field).extend().print();
+	}
+}
+~~~
+
+可換環の指定
+~~~
+import scalar.*;
+import scalar.field.*;
+
+public class Calc {
+	public static void main(String[] args) {
+		// 有理数
+		Field<Frac> field1 = new RationalField();
+
+		// 整数
+		Field<Integer> field2 = new IntegerField();
+
+		// 有限体
+		String order = "7";
+		Field<BigInteger> field3 = new GaloisField(new BigInteger(order));
+	}
+}
 
 ## Details
 ###SContainerの種類
 SContainer(以下コンテナ)は以下の二種類ある
 
-1.値(v:value)を表現するコンテナ。数であるint値を持つものと、変数名であるStringを持つものの二種類ある。数と変数を同時に持つことはできない。
+1.値(v:value)を表現するコンテナ。可換環上で定義される数値を持つものと、変数名であるStringを持つものの二種類ある。数と変数を同時に持つことはできない。
+  数値の型はジェネリクスで、可換環のインスタンスによって決定される。
 
-2.SContainer(c:container)、項(a:added)、因数(m:multipled)、指数(e:exponent)をもち「式」を表現するコンテナ。各パラメータはコンテナで、式を表現するものは((c^e)*m)+aを表現する。
+2.SContainer(c:container)、項(a:added)、因数(m:multipled)、指数(e:exponent)をもち「式」を表現するコンテナ。
+  各パラメータはコンテナで、このコンテナは((c^e)*m)+aを表現する。
 
-a、m、eはnullポインタが許されており、aのnullポインタはaが"0"であることを、m,eのそれはそれぞれが"1"であることをそれぞれ意味する。
+  また、a,m,eはnullポインタが許されており、aのnullポインタはaが"0"であることを、m,eのそれはそれぞれが"1"であることをそれぞれ意味する。"0"と"1"はそれぞれ指定された可換環上での加法単位元、乗法単位元を表す。
 
 ###SContainerによる表現
 
@@ -104,6 +142,5 @@ a、m、eはnullポインタが許されており、aのnullポインタはaが"
 ※後ろの因数には囲い込むコンテナは必要はない
 
 ## TODO
-・とりあえず因数のくくりだしなど計算できるように
-
 ・可換でない環・体への対応
+・自然数ベキ乗の展開（(A+B)^2とか）
